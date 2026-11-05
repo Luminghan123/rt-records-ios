@@ -1,0 +1,30 @@
+name: rt_records
+description: 呼吸治疗工作记录（病历首页 / 有创通气 / 无创通气 / PDF 导出）
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  sqflite: ^2.3.3
+  path: ^1.9.0
+  provider: ^6.1.2
+  table_calendar: ^3.1.2
+  pdf: ^3.11.1
+  printing: ^5.13.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # PDF 内嵌中文字体（个人使用；公开分发请换成开源 Noto Sans SC）
+    - assets/fonts/SimHei.ttf

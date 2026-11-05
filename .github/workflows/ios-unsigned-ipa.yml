@@ -1,0 +1,118 @@
+# 在 GitHub 提供的 macOS 虚拟机上编译 iOS App，打包成【TrollStore（巨魔）可直接安装】的 IPA。
+# 目标设备：已安装 TrollStore / 白巨魔 的 iPhone —— 不需要任何 Apple 证书、不需要重签、永久有效。
+# 用法：仓库 → Actions → Build iOS IPA (TrollStore) → Run workflow → 下载 IPA → 手机上用 TrollStore 打开。
+# 公开仓库：macOS 构建完全免费、不限次数；私有仓库每月免费额度约够跑 10 次。
+# 注意：手机系统需 iOS 15.0 或更高（Flutter 3.47.9 的最低部署目标）。
+
+name: Build iOS IPA (TrollStore)
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: '同时发布到 Releases（方便手机 Safari 直接下载；失败不影响 IPA 产出）'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter 3.47.9
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+          cache: true
+
+      - name: 打印环境版本（出错时方便排查）
+        run: |
+          flutter --version
+          xcodebuild -version
+          flutter precache --ios
+
+      - name: 拉取 Dart 依赖并重建 iOS 配置文件
+        run: flutter pub get
+
+      - name: 按需安装 CocoaPods 依赖
+        run: |
+          if [ -f ios/Podfile ]; then
+            echo "检测到 Podfile，执行 pod install"
+            cd ios && pod install
+          else
+            echo "无 Podfile，使用 Flutter 3.47 的 Swift Package Manager，跳过"
+          fi
+
+      - name: 编译 iOS release（不签名）
+        run: flutter build ios --release --no-codesign
+
+      - name: 打包 IPA（TrollStore 直装格式）
+        run: |
+          set -e
+          APP="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP" ]; then
+            APP=$(find build -type d -name "Runner.app" -print -quit)
+          fi
+          if [ -z "$APP" ] || [ ! -d "$APP" ]; then
+            echo "找不到 Runner.app，候选目录："
+            find build -maxdepth 6 -name "*.app" -type d
+            exit 1
+          fi
+          echo "使用 App: $APP"
+          rm -rf Payload rt_records_unsigned.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+
+          # 清掉 macOS 元数据。TrollStore 解析 IPA 时遇到 ._ 开头的 AppleDouble 文件会报错
+          xattr -cr Payload 2>/dev/null || true
+          find Payload -name '._*' -delete 2>/dev/null || true
+          find Payload -name '.DS_Store' -delete 2>/dev/null || true
+
+          # 补一层 ad-hoc 签名：TrollStore 本来就能自己签，
+          # 但带上标准签名结构后，爱思助手 / Filza 等安装器也能识别
+          codesign -f -s - --deep Payload/Runner.app 2>/dev/null \
+            || echo "ad-hoc 签名跳过（TrollStore 仍可正常安装）"
+
+          # -X 表示不写入扩展属性，避免生成 __MACOSX
+          zip -qrX rt_records_unsigned.ipa Payload
+          ls -lh rt_records_unsigned.ipa
+
+      - name: 校验 IPA 结构
+        run: |
+          set -e
+          unzip -l rt_records_unsigned.ipa | grep -q "Payload/Runner.app/Info.plist"
+          unzip -l rt_records_unsigned.ipa | grep -q "Payload/Runner.app/Runner"
+          if unzip -l rt_records_unsigned.ipa | grep -q "__MACOSX"; then
+            echo "IPA 里混入了 macOS 元数据，重新打包"
+            exit 1
+          fi
+          echo "IPA 结构校验通过（Payload/Runner.app）"
+          unzip -l rt_records_unsigned.ipa | tail -3
+
+      - name: 上传 IPA 供下载
+        uses: actions/upload-artifact@v4
+        with:
+          name: trollstore-ipa
+          path: rt_records_unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: 同时发布到 Releases（手机 Safari 可直接下载）
+        if: ${{ inputs.publish_release }}
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-build-${{ github.run_number }}
+          name: 呼吸治疗记录 iOS v1 (build ${{ github.run_number }})
+          body: |
+            未签名 IPA，适用于已安装 TrollStore（巨魔）的 iPhone。
+            手机 Safari 打开本页点 IPA 下载，在「文件」App 里分享给 TrollStore 即可安装。
+            系统要求 iOS 15.0 或更高；安装的 App 永久有效，不会过期。
+          files: rt_records_unsigned.ipa
