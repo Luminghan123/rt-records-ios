@@ -44,13 +44,14 @@ jobs:
       - name: 拉取 Dart 依赖并重建 iOS 配置文件
         run: flutter pub get
 
-      - name: 修正离线识别库的 Swift Package（平台声明 + 本地依赖路径）
+      - name: 修正离线识别库的 Swift Package（平台声明 + 依赖去重）
         # 1) google_mlkit_* 1.0.0 写死 .iOS("15.5")，但其依赖的 GoogleMLKit 二进制只要求 iOS 15.0。
         #    工程部署目标保持 15.0，避免已安装 V1 的设备升级后装不上。
         # 2) text_recognition 用 ../../../google_mlkit_commons/... 引用 commons，那是旧 CocoaPods
-        #    .symlinks/plugins 结构；Flutter 3.47 的 Swift Package 目录里没有这一层，Xcode 会报
-        #    "the package at .../google_mlkit_commons cannot be accessed"。把 commons 内联进
-        #    text_recognition 包目录并改成包内相对路径，按 symlink 或真实路径解析都能找到。
+        #    .symlinks/plugins 结构；Flutter 3.47 把插件放在
+        #    ios/Flutter/ephemeral/Packages/.packages/<插件名>-<版本>。
+        #    直接指向 Flutter 已生成的 commons 包（同一个包身份），既找得到，也不会因为
+        #    commons 被引入两次而报 "multiple similar targets"。
         # 必须在 flutter pub get 之后执行；编译用 --no-pub 防止重新下载覆盖修正。
         run: |
           python3 - <<'PY'
@@ -77,16 +78,19 @@ jobs:
           if tr is None or cm is None:
               print('WARN: 未找到 ML Kit 的 Package.swift，跳过路径修正')
           else:
-              dest = tr.parent / 'google_mlkit_commons'
-              if dest.exists():
-                  shutil.rmtree(dest)
-              shutil.copytree(cm.parent, dest)
+              leftover = tr.parent / 'google_mlkit_commons'
+              if leftover.exists():
+                  shutil.rmtree(leftover)
+              ident = cm.parent.parent.parent.name
               s = tr.read_text()
-              s2, n = re.subn(r'\.package\(path:\s*"[^"]*google_mlkit_commons[^"]*"\)',
-                              '.package(path: "google_mlkit_commons")', s)
-              tr.write_text(s2)
-              print('inlined commons ->', dest, '| path replaced:', n)
-              print('dep line:', [l.strip() for l in s2.splitlines() if '.package(path:' in l])
+              s, n1 = re.subn(r'\.package\(path:\s*"[^"]*google_mlkit_commons[^"]*"\)',
+                              '.package(path: "../%s")' % ident, s)
+              s, n2 = re.subn(r'(\.product\(name:\s*"google-mlkit-commons",\s*package:\s*")[^"]*("\))',
+                              r'\g<1>%s\g<2>' % ident, s)
+              tr.write_text(s)
+              print('commons identity:', ident, '| path fixed:', n1, '| product fixed:', n2)
+              print('dep lines:', [l.strip() for l in s.splitlines()
+                                   if '.package(path:' in l or 'google-mlkit-commons' in l])
           PY
 
       - name: 按需安装 CocoaPods 依赖
