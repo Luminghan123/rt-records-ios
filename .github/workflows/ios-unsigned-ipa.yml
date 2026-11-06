@@ -44,36 +44,49 @@ jobs:
       - name: 拉取 Dart 依赖并重建 iOS 配置文件
         run: flutter pub get
 
-      - name: 兼容 iOS 15.0：修正离线识别库的 Swift Package 平台声明
-        # google_mlkit_* 1.0.0 的 Package.swift 写死 .iOS("15.5")，
-        # 但其依赖的 GoogleMLKit 二进制只要求 iOS 15.0（.iOS(.v15)）。
-        # 工程部署目标保持 15.0，避免已安装 V1 的设备升级后装不上。
-        # Flutter 会把插件 rsync 到 build/ios/SourcePackages，因此必须在 pub get 之后统一修正。
+      - name: 修正离线识别库的 Swift Package（平台声明 + 本地依赖路径）
+        # 1) google_mlkit_* 1.0.0 写死 .iOS("15.5")，但其依赖的 GoogleMLKit 二进制只要求 iOS 15.0。
+        #    工程部署目标保持 15.0，避免已安装 V1 的设备升级后装不上。
+        # 2) text_recognition 用 ../../../google_mlkit_commons/... 引用 commons，那是旧 CocoaPods
+        #    .symlinks/plugins 结构；Flutter 3.47 的 Swift Package 目录里没有这一层，Xcode 会报
+        #    "the package at .../google_mlkit_commons cannot be accessed"。把 commons 内联进
+        #    text_recognition 包目录并改成包内相对路径，按 symlink 或真实路径解析都能找到。
+        # 必须在 flutter pub get 之后执行；编译用 --no-pub 防止重新下载覆盖修正。
         run: |
           python3 - <<'PY'
-          import os, pathlib
-          roots = [
-              pathlib.Path('build'),
-              pathlib.Path('ios'),
-              pathlib.Path(os.environ.get('PUB_CACHE', os.path.expanduser('~/.pub-cache'))),
-          ]
+          import os, pathlib, re, shutil
+          cache = pathlib.Path(os.environ.get('PUB_CACHE', os.path.expanduser('~/.pub-cache')))
+          manifests = list(cache.rglob('Package.swift'))
           patched = []
-          for root in roots:
-              if not root.exists():
-                  continue
-              for p in root.rglob('Package.swift'):
-                  try:
-                      s = p.read_text()
-                      if '.iOS("15.5")' not in s and '.iOS(.v15_5)' not in s:
-                          continue
-                      p.write_text(s.replace('.iOS("15.5")', '.iOS("15.0")')
-                                    .replace('.iOS(.v15_5)', '.iOS(.v15)'))
-                      patched.append(str(p))
-                  except Exception as e:
-                      print('skip', p, e)
-          print('patched Package.swift:', len(patched))
-          for x in patched[:12]:
+          for p in manifests:
+              try:
+                  s = p.read_text()
+                  if '.iOS("15.5")' not in s and '.iOS(.v15_5)' not in s:
+                      continue
+                  p.write_text(s.replace('.iOS("15.5")', '.iOS("15.0")')
+                                .replace('.iOS(.v15_5)', '.iOS(.v15)'))
+                  patched.append(str(p))
+              except Exception as e:
+                  print('skip', p, e)
+          print('platform patched:', len(patched))
+          for x in patched[:8]:
               print('  ', x)
+
+          tr = next((p for p in manifests if p.parent.name == 'google_mlkit_text_recognition'), None)
+          cm = next((p for p in manifests if p.parent.name == 'google_mlkit_commons'), None)
+          if tr is None or cm is None:
+              print('WARN: 未找到 ML Kit 的 Package.swift，跳过路径修正')
+          else:
+              dest = tr.parent / 'google_mlkit_commons'
+              if dest.exists():
+                  shutil.rmtree(dest)
+              shutil.copytree(cm.parent, dest)
+              s = tr.read_text()
+              s2, n = re.subn(r'\.package\(path:\s*"[^"]*google_mlkit_commons[^"]*"\)',
+                              '.package(path: "google_mlkit_commons")', s)
+              tr.write_text(s2)
+              print('inlined commons ->', dest, '| path replaced:', n)
+              print('dep line:', [l.strip() for l in s2.splitlines() if '.package(path:' in l])
           PY
 
       - name: 按需安装 CocoaPods 依赖
