@@ -34,8 +34,9 @@ class SettingsPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  '全部数据只保存在这台手机的本地数据库里，App 不联网、不上传。\n'
-                  '卸载 App 会连同记录一起删除，重要资料请及时导出 PDF 归档。',
+                  '全部数据（含拍照的照片）只保存在这台手机的本地数据库里，App 不联网、不上传。\n'
+                  '卸载 App 会连同记录一起删除，重要资料请及时导出 PDF 归档。\n'
+                  '照片识别在本机离线完成，识别结果需人工核对后才填入表格。',
                   style: TextStyle(fontSize: 12.5, height: 1.7, color: kInkSoft),
                 ),
               ],
@@ -80,7 +81,7 @@ class SettingsPage extends StatelessWidget {
           _tile(
             icon: Icons.info_outline,
             title: '版本',
-            subtitle: '呼吸治疗工作记录 1.0.0（V1 安卓版）',
+            subtitle: '呼吸治疗工作记录 1.1.0（V1.1 · 支持拍照识别）',
             onTap: () {},
           ),
           const SizedBox(height: 26),

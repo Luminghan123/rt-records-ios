@@ -15,11 +15,16 @@ class SchemaForm extends StatefulWidget {
     required this.groups,
     required this.values,
     this.initiallyExpanded = true,
+    this.groupFooters,
   });
 
   final List<FormGroup> groups;
   final Map<String, dynamic> values;
   final bool initiallyExpanded;
+
+  /// 按分组名插入的自定义区域，例如「血气分析」分组下面的照片附件区。
+  /// 这些 key 不会进入 form_schema 的字段清单，PDF 表格也不会读到。
+  final Map<String, Widget>? groupFooters;
 
   @override
   State<SchemaForm> createState() => _SchemaFormState();
@@ -94,6 +99,11 @@ class _SchemaFormState extends State<SchemaForm> {
                   }).toList(),
                 );
               }),
+              if (widget.groupFooters?[group.name] != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: widget.groupFooters![group.name]!,
+                ),
             ],
           ),
         );

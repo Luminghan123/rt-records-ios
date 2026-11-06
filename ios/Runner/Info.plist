@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>用于拍摄病历资料和血气报告单，照片只保存在本机，不会上传</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>用于从相册选择病历资料和血气报告单照片</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIApplicationSceneManifest</key>

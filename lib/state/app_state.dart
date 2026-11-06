@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../data/rt_db.dart';
 import '../models/form_schema.dart';
 import '../models/record.dart';
+import '../services/photo_store.dart';
 
 /// 全局状态。数据量是"一位治疗师日常记录"级别，
 /// 启动时全量读入内存，界面过滤/PDF 导出都不必反复查库。
@@ -120,7 +121,19 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteForm(int id) async {
+    // 先收集这份病历名下的照片文件名，避免删掉记录后留下打不开的孤儿图片
+    final photoNames = <String>[];
+    for (final f in _forms.where((f) => f.id == id)) {
+      photoNames.addAll(PhotoStore.readList(f.data, PhotoStore.keyForm));
+      photoNames.addAll(PhotoStore.readList(f.data, PhotoStore.keyAbg));
+    }
+    for (final p in _points.where((r) => r.formId == id)) {
+      photoNames.addAll(PhotoStore.readList(p.data, PhotoStore.keyAbg));
+    }
     await _db.deleteForm(id);
+    for (final name in photoNames) {
+      await PhotoStore.delete(name);
+    }
     await load();
   }
 
@@ -132,6 +145,12 @@ class AppState extends ChangeNotifier {
     required List<Map<String, dynamic>> points,
   }) async {
     final db = _db;
+    // 保存前已有的血气照片。保存成功后用「前后差集」清掉被删时间点遗留的文件：
+    // 这样即使删了时间点又选「不保存」离开，原照片也不会被误删。
+    final beforePhotos = <String>{};
+    for (final old in pointsFor(form.id, form.date, type)) {
+      beforePhotos.addAll(PhotoStore.readList(old.data, PhotoStore.keyAbg));
+    }
     final meta = VentMeta(
       id: metaFor(form.id, form.date, type)?.id,
       formId: form.id!,
@@ -157,11 +176,19 @@ class AppState extends ChangeNotifier {
       ));
       seq++;
     }
+    final afterPhotos = <String>{};
+    for (final data in points) {
+      afterPhotos.addAll(PhotoStore.readList(data, PhotoStore.keyAbg));
+    }
+    for (final name in beforePhotos.difference(afterPhotos)) {
+      await PhotoStore.delete(name);
+    }
     await load();
   }
 
   Future<void> clearAll() async {
     await _db.clearAll();
+    await PhotoStore.deleteAll(); // 照片文件一并清掉，避免残留
     await load();
   }
 

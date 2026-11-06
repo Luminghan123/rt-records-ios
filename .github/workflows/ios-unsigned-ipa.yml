@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-ios:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,8 +38,43 @@ jobs:
           xcodebuild -version
           flutter precache --ios
 
+      - name: 启用 Swift Package Manager（本机离线识别库只提供 Swift Package）
+        run: flutter config --enable-swift-package-manager
+
       - name: 拉取 Dart 依赖并重建 iOS 配置文件
         run: flutter pub get
+
+      - name: 兼容 iOS 15.0：修正离线识别库的 Swift Package 平台声明
+        # google_mlkit_* 1.0.0 的 Package.swift 写死 .iOS("15.5")，
+        # 但其依赖的 GoogleMLKit 二进制只要求 iOS 15.0（.iOS(.v15)）。
+        # 工程部署目标保持 15.0，避免已安装 V1 的设备升级后装不上。
+        # Flutter 会把插件 rsync 到 build/ios/SourcePackages，因此必须在 pub get 之后统一修正。
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          roots = [
+              pathlib.Path('build'),
+              pathlib.Path('ios'),
+              pathlib.Path(os.environ.get('PUB_CACHE', os.path.expanduser('~/.pub-cache'))),
+          ]
+          patched = []
+          for root in roots:
+              if not root.exists():
+                  continue
+              for p in root.rglob('Package.swift'):
+                  try:
+                      s = p.read_text()
+                      if '.iOS("15.5")' not in s and '.iOS(.v15_5)' not in s:
+                          continue
+                      p.write_text(s.replace('.iOS("15.5")', '.iOS("15.0")')
+                                    .replace('.iOS(.v15_5)', '.iOS(.v15)'))
+                      patched.append(str(p))
+                  except Exception as e:
+                      print('skip', p, e)
+          print('patched Package.swift:', len(patched))
+          for x in patched[:12]:
+              print('  ', x)
+          PY
 
       - name: 按需安装 CocoaPods 依赖
         run: |
@@ -51,7 +86,16 @@ jobs:
           fi
 
       - name: 编译 iOS release（不签名）
-        run: flutter build ios --release --no-codesign
+        run: |
+          set -e
+          # --no-pub 避免重新 rsync 插件包，把上一步的平台修正覆盖掉
+          if flutter build ios --release --no-codesign --no-pub; then
+            echo "编译成功（部署目标 iOS 15.0）"
+          else
+            echo "::warning::平台修正未生效，改用 iOS 15.5 部署目标重试"
+            python3 -c "import pathlib; p=pathlib.Path('ios/Runner.xcodeproj/project.pbxproj'); s=p.read_text(); p.write_text(s.replace('IPHONEOS_DEPLOYMENT_TARGET = 15.0;', 'IPHONEOS_DEPLOYMENT_TARGET = 15.5;')); print('deployment target -> 15.5')"
+            flutter build ios --release --no-codesign --no-pub
+          fi
 
       - name: 打包 IPA（TrollStore 直装格式）
         run: |
@@ -110,9 +154,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ios-build-${{ github.run_number }}
-          name: 呼吸治疗记录 iOS v1 (build ${{ github.run_number }})
+          name: 呼吸治疗记录 iOS v1.1 (build ${{ github.run_number }})
           body: |
             未签名 IPA，适用于已安装 TrollStore（巨魔）的 iPhone。
+            v1.1 新增：病历资料 / 血气报告单拍照录入、本机离线识别数值（需人工核对）、照片本地存档。
             手机 Safari 打开本页点 IPA 下载，在「文件」App 里分享给 TrollStore 即可安装。
-            系统要求 iOS 15.0 或更高；安装的 App 永久有效，不会过期。
+            系统要求 iOS 15.0 或更高（若构建走了兜底方案则为 15.5）；安装的 App 永久有效，不会过期。
           files: rt_records_unsigned.ipa

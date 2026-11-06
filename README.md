@@ -1,82 +1,17 @@
-# 免费云构建 IPA · 巨魔（TrollStore）直装版
+# rt_records
 
-**你的手机已经装了白巨魔，这件事让流程变简单了一大截：**
+A new Flutter project.
 
-| | 有巨魔（你现在） | 普通 iPhone |
-| --- | --- | --- |
-| Apple ID / 密码 | ❌ 完全不用 | 要填 |
-| Sideloadly、iTunes、数据线 | ❌ 完全不用 | 要装要连 |
-| 7 天重签 / 开发者模式 / 信任证书 | ❌ 都没有 | 全都要做 |
-| 装完能用多久 | **永久，和普通 App 一样** | 7 天 |
+## Getting Started
 
-唯一还要做的一步是：**在 macOS 上编译出 IPA 文件**。Apple 不允许 Windows 编译 iOS 程序，所以用 GitHub 免费的 macOS 云主机帮你跑一次，点几下鼠标就行，全程零花费。
+This project is a starting point for a Flutter application.
 
-> ⚠️ **先确认一件事**：打开 `设置 → 通用 → 关于本机 → iOS 版本`，需要 **15.0 或更高**（Flutter 3.47 的硬性要求）。既然你装得上巨魔，大概率满足；**如果低于 15.0，先告诉我**，我换一套旧版 Flutter 的构建配置再给你。
+A few resources to get you started if this is your first Flutter project:
 
----
+- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
+- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
+- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
 
-## 第一段：把工程放进 GitHub（约 5 分钟）
-
-1. 打开 `github.com`，注册或登录免费账号。
-2. 右上角 `+` → `New repository`：仓库名填 `rt-records-ios`，选 **Public（公开）**，其他都不勾，点 `Create repository`。
-   - 公开仓库的 macOS 云端构建**完全免费、不限次数**；私有仓库也免费，只是每月额度约够跑 10 次。
-   - 仓库里只有代码、空表格模板和字体，**没有任何患者数据**。
-3. 把 `呼吸治疗记录_iOS云构建包.zip` **解压**，打开解压出来的文件夹。
-4. 仓库页面点 `Add file → Upload files`，把文件夹里的**所有内容全选拖进上传区**，等传完点 `Commit changes`。
-   - ⚠️ `.github` 文件夹一定要一起传（云构建配置在里面）；Windows 若看不到点开头的文件夹，在资源管理器「查看」里勾上**隐藏的项目**。
-   - 漏传的表现是：Actions 页面里找不到 `Build iOS IPA (TrollStore)` 这个按钮。
-
----
-
-## 第二段：点一下，等 IPA（约 10–20 分钟）
-
-5. 仓库上方 `Actions` → 左侧 `Build iOS IPA (TrollStore)` → 右侧 `Run workflow` → 再点绿色 `Run workflow`（弹出的选项保持默认即可）。
-6. 等小圆点从黄变绿。第一次会下载 Flutter 和编译，慢一些。
-7. 点进这次运行，拉到最下面 `Artifacts`，点 **`trollstore-ipa`** 下载，解压得到 `rt_records_unsigned.ipa`。
-   - 同时配置里会自动发一份到仓库右侧的 **Releases**（`ios-build-数字`），那里下载的是**直接可用的 .ipa 文件**，更适合手机端，见下一段路 A。
-   - 变红色叉：点进去把报错文字复制给我，我改配置，你重新上传再点一次。
-
----
-
-## 第三段：装进手机（约 1 分钟，两条路任选）
-
-**路 A · 不用电脑，手机直接装（推荐）**
-
-8. 手机 Safari 打开仓库的 `Releases` 页面（或云端运行成功后生成的那个 release）→ 点 `rt_records_unsigned.ipa` 下载。
-9. 下载完成后打开「文件」App → 找到下载的 IPA → **分享 → 用 TrollStore 打开**（或打开 TrollStore，点右上角 `+` 从文件里选这个 IPA）。
-10. 点 `Install` → 桌面出现「呼吸治疗记录」→ 完成。
-
-> 如果 Releases 那一步没成功（配置里设了失败不阻断），就用路 B：电脑上下载 Artifact、解压出 IPA，用微信文件传输助手 / QQ / 隔空投送 / 爱思助手任意一种发到手机，在「文件」里同样分享给 TrollStore 即可。
-
-**路 B · 电脑下载后传进手机**：Artifact 下载的是 zip，先解压出 `rt_records_unsigned.ipa`，再按上面第 9–10 步操作。
-
----
-
-## 装完注意三件事
-
-| 事项 | 说明 |
-| --- | --- |
-| **重启后图标变灰/打不开** | 去 `TrollStore → Settings → Install Persistence Helper` 选一个系统 App（如「提示」）装好助手，再 `Refresh App Registrations`。这是巨魔本身的机制，与本 App 无关。 |
-| **别升级 iOS** | 巨魔依赖 CoreTrust 漏洞，升级系统可能让它失效，App 会跟着打不开。 |
-| **卸载方式** | 巨魔装的 App 长按图标删不掉，要在 `TrollStore → Apps` 里左滑删除。 |
-
----
-
-## 卡住了怎么办
-
-| 现象 | 处理 |
-| --- | --- |
-| Actions 里没有 `Run workflow` | `.github` 文件夹没传上去，回第 4 步重传 |
-| 构建红色叉 | 点进去把日志文字复制给我 |
-| 手机提示「不兼容 / 无法安装」 | 先确认 iOS ≥ 15.0；低于 15 告诉我，我换旧版构建 |
-| TrollStore 报 IPA 解析错误 | 配置里已清理 macOS 元数据并补了 ad-hoc 签名；若仍报错，把提示文字发我 |
-| 装完打开就闪退 | 把手机系统版本和闪退现象告诉我（可借越狱环境看崩溃日志） |
-
----
-
-## 关于隐私与合规
-
-- 仓库里只有代码、空表格模板、字体和构建配置，**没有任何真实患者信息**。
-- App 纯本地运行、不注册、不联网、不上传，病历数据只存在你这台手机里。
-- `SimHei.ttf` 取自 Windows 系统字体，**仅适合自用**；若要公开分发或上架，请换成可商用开源中文字体（覆盖同名文件即可，代码不用改）。
-- 病历首页含姓名、住院号等敏感信息，科室使用请遵循院内数据管理规定。
+For help getting started with Flutter development, view the
+[online documentation](https://docs.flutter.dev/), which offers tutorials,
+samples, guidance on mobile development, and a full API reference.

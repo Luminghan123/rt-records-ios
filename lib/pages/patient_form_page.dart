@@ -6,9 +6,13 @@ import 'package:provider/provider.dart';
 import '../app_theme.dart';
 import '../models/form_schema.dart';
 import '../models/record.dart';
+import '../services/ocr_service.dart';
+import '../services/photo_store.dart';
 import '../state/app_state.dart';
 import '../utils/date_fmt.dart';
+import '../widgets/photo_attachments.dart';
 import '../widgets/schema_form.dart';
+import 'ocr_review_page.dart';
 import 'patient_day_page.dart';
 
 /// 病历首页（教程附录Ⅱ 一、呼吸治疗病历首页）
@@ -95,12 +99,46 @@ class _PatientFormPageState extends State<PatientFormPage> {
       // 时间类字段不沿用，改成这次填写的时刻
       _values['record_time'] = formatStamp(DateTime.now());
       _values.remove('icu_in');
+      _values.remove(PhotoStore.keyForm); // 照片属于当次资料，不沿用
       _revision++; // 换 key，让文本框重新读值
     });
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已带出 ${picked.displayName} 上次的病历内容')),
     );
+  }
+
+  /// 拍完病历资料/化验单：本机离线识别 -> 人工核对 -> 填入「辅助检查」
+  Future<void> _recognizeFormPhoto(String imagePath) async {
+    try {
+      final raw = await OcrService.recognize(imagePath);
+      final candidates = OcrService.parseLab(raw);
+      if (!mounted) return;
+      final picked = await Navigator.of(context).push<Map<String, String>>(
+        MaterialPageRoute(
+          builder: (_) => OcrReviewPage(
+            title: '化验单识别结果核对',
+            imagePath: imagePath,
+            candidates: candidates,
+            rawText: raw,
+          ),
+        ),
+      );
+      if (picked == null || picked.isEmpty) return;
+      setState(() {
+        _values.addAll(picked);
+        _revision++; // 换 key，让下面的文本框重新读取刚填入的值
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已填入 ${picked.length} 项，请核对后保存')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('识别失败：$e\n照片已保存，可以手动填写')),
+      );
+    }
   }
 
   Future<void> _save() async {
@@ -141,7 +179,9 @@ class _PatientFormPageState extends State<PatientFormPage> {
         title: const Text('删除这份病历？'),
         content: const Text('该患者当天的有创/无创记录会一并删除，且不可恢复。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('删除', style: TextStyle(color: kDanger)),
@@ -177,7 +217,8 @@ class _PatientFormPageState extends State<PatientFormPage> {
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: kPrimarySoft,
                     borderRadius: BorderRadius.circular(8),
@@ -199,10 +240,25 @@ class _PatientFormPageState extends State<PatientFormPage> {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-              child: SchemaForm(
-                key: ValueKey<int>(_revision),
-                groups: kPatientGroups,
-                values: _values,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 10),
+                    child: PhotoAttachments(
+                      values: _values,
+                      photoKey: PhotoStore.keyForm,
+                      title: '病历资料 / 化验单照片',
+                      hint: '拍照或选图后自动识别数值，核对后填入「辅助检查」；'
+                          '照片只存本机，导出 PDF 不附带。',
+                      onPhotoAdded: _recognizeFormPhoto,
+                    ),
+                  ),
+                  SchemaForm(
+                    key: ValueKey<int>(_revision),
+                    groups: kPatientGroups,
+                    values: _values,
+                  ),
+                ],
               ),
             ),
           ),

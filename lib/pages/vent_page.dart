@@ -4,9 +4,13 @@ import 'package:provider/provider.dart';
 import '../app_theme.dart';
 import '../models/form_schema.dart';
 import '../models/record.dart';
+import '../services/ocr_service.dart';
+import '../services/photo_store.dart';
 import '../state/app_state.dart';
 import '../utils/date_fmt.dart';
+import '../widgets/photo_attachments.dart';
 import '../widgets/schema_form.dart';
+import 'ocr_review_page.dart';
 
 /// 有创 / 无创通气记录页（共用此页，按 [type] 加载不同字段定义）。
 ///
@@ -23,8 +27,12 @@ class VentPage extends StatefulWidget {
 
 class _PointItem {
   _PointItem(this.key, this.data);
+
   final int key;
   final Map<String, dynamic> data;
+
+  /// 识别结果回填后自增，用来让这一列的表单重建、显示新值
+  int revision = 0;
 }
 
 class _VentPageState extends State<VentPage> {
@@ -52,8 +60,7 @@ class _VentPageState extends State<VentPage> {
     }
   }
 
-  Color get _accent =>
-      widget.type == kTypeInvasive ? kInvasive : kNiv;
+  Color get _accent => widget.type == kTypeInvasive ? kInvasive : kNiv;
 
   void _markDirty() {
     if (!_dirty) setState(() => _dirty = true);
@@ -86,10 +93,59 @@ class _VentPageState extends State<VentPage> {
       ),
     );
     if (ok != true) return;
+    // 照片文件由 AppState 在「保存成功」后按前后差集统一清理，
+    // 这里不动文件，避免删了时间点又选「不保存」时把原照片误删。
     setState(() {
       _items.removeWhere((e) => e.key == key);
       _dirty = true;
     });
+  }
+
+  /// 「血气分析」分组下面的照片附件区（每个时间点各存各的）
+  Widget _abgPhotoSection(_PointItem item) {
+    return PhotoAttachments(
+      values: item.data,
+      photoKey: PhotoStore.keyAbg,
+      title: '血气报告单照片',
+      hint: '拍照或选图后自动识别 pH / PaO₂ 等数值，核对后填入本次血气；'
+          '照片只存本机，导出 PDF 不附带。',
+      accent: _accent,
+      onPhotoAdded: (path) => _recognizeAbg(path, item),
+    );
+  }
+
+  /// 拍完血气报告单：本机离线识别 -> 人工核对 -> 填入这一列
+  Future<void> _recognizeAbg(String imagePath, _PointItem item) async {
+    try {
+      final raw = await OcrService.recognize(imagePath);
+      final candidates = OcrService.parseAbg(raw);
+      if (!mounted) return;
+      final picked = await Navigator.of(context).push<Map<String, String>>(
+        MaterialPageRoute(
+          builder: (_) => OcrReviewPage(
+            title: '血气识别结果核对',
+            imagePath: imagePath,
+            candidates: candidates,
+            rawText: raw,
+          ),
+        ),
+      );
+      if (picked == null || picked.isEmpty) return;
+      setState(() {
+        item.data.addAll(picked);
+        item.revision++; // 换 key，让这一列的文本框重新读取刚填入的值
+        _dirty = true;
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已填入 ${picked.length} 项，请核对后保存')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('识别失败：$e\n照片已保存，可以手动填写')),
+      );
+    }
   }
 
   Future<void> _save({bool pop = true}) async {
@@ -259,9 +315,13 @@ class _VentPageState extends State<VentPage> {
                     Listener(
                       onPointerDown: (_) => _markDirty(),
                       child: SchemaForm(
+                        key: ValueKey<String>('${item.key}-${item.revision}'),
                         groups: pointGroups(widget.type),
                         values: item.data,
                         initiallyExpanded: true,
+                        groupFooters: {
+                          '血气分析': _abgPhotoSection(item),
+                        },
                       ),
                     ),
                   ],
